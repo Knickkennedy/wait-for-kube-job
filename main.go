@@ -78,15 +78,15 @@ func main() {
 				if result.Status.Active == 0 && result.Status.Succeeded == 0 && result.Status.Failed == 0 {
 					fmt.Printf("Job %s hasn't started yet.\n", result.Name)
 				} else if result.Status.Active > 0 {
-					fmt.Printf("Job %s is still running.", result.Name)
+					fmt.Printf("Job %s is still running.\n", result.Name)
 				} else if result.Status.Succeeded > 0 {
-					fmt.Printf("Job %s has completed", result.Name)
+					fmt.Printf("Job %s has completed\n", result.Name)
 					done = true
 					break
 				}
 			}
 			time.Sleep(10 * time.Second)
-			fmt.Printf("Checking on job %s", job)
+			fmt.Printf("Checking on job %s\n", job)
 		}
 	} else {
 		fmt.Println("Environment Variable \"JOB_NAME\" is required.")
