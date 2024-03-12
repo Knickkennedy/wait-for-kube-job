@@ -40,12 +40,12 @@ func main() {
 
 	// This is needed for internal to cluster authentication
 	config, err := rest.InClusterConfig()
-
-	job, exists := os.LookupEnv("JOB_NAME")
-
 	if err != nil {
 		panic(err.Error())
 	}
+
+	job, jobExists := os.LookupEnv("JOB_NAME")
+	namespace, namespaceExists := os.LookupEnv("NAMESPACE")
 
 	// create the clientset
 	clientset, err := kubernetes.NewForConfig(config)
@@ -53,42 +53,50 @@ func main() {
 		panic(err.Error())
 	}
 
-	if exists {
-		done := false
-		for !done {
-			/*jobs, err := clientset.BatchV1().Jobs("").List(context.TODO(), metav1.ListOptions{})
-			if err != nil {
-				panic(err.Error())
-			}
-
-			fmt.Printf("There are %d jobs in the cluster\n", len(jobs.Items))*/
-
-			namespace := "db2"
-			result, err := clientset.BatchV1().Jobs(namespace).Get(context.TODO(), job, metav1.GetOptions{})
-			if errors.IsNotFound(err) {
-				fmt.Printf("Job %s in namespace %s not found\n", job, namespace)
-			} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-				fmt.Printf("Error getting job %s in namespace %s: %v\n",
-					job, namespace, statusError.ErrStatus.Message)
-			} else if err != nil {
-				panic(err.Error())
-			} else {
-				fmt.Printf("Found job %s in namespace %s\n", job, namespace)
-
-				if result.Status.Active == 0 && result.Status.Succeeded == 0 && result.Status.Failed == 0 {
-					fmt.Printf("Job %s hasn't started yet.\n", result.Name)
-				} else if result.Status.Active > 0 {
-					fmt.Printf("Job %s is still running.\n", result.Name)
-				} else if result.Status.Succeeded > 0 {
-					fmt.Printf("Job %s has completed\n", result.Name)
-					done = true
-					break
-				}
-			}
-			time.Sleep(10 * time.Second)
-			fmt.Printf("Checking on job %s\n", job)
-		}
+	if !jobExists || job == "" {
+		panic("JOB_NAME is a required environment variable.")
+	} else if !namespaceExists || namespace == "" {
+		panic("NAMESPACE is a required environment variable.")
 	} else {
-		fmt.Println("Environment Variable \"JOB_NAME\" is required.")
+		for {
+			fmt.Printf("Checking on job %s\n", job)
+			done, err := GetJobStatus(job, namespace, clientset)
+
+			time.Sleep(10 * time.Second)
+
+			if err != nil {
+				panic(err)
+			} else if done {
+				break
+			}
+		}
+	}
+}
+
+func GetJobStatus(job, namespace string, clientset *kubernetes.Clientset) (bool, error) {
+
+	result, err := clientset.BatchV1().Jobs(namespace).Get(context.TODO(), job, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return true, fmt.Errorf("job %s in namespace %s not found\n", job, namespace)
+	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
+		return true, fmt.Errorf("Error getting job %s in namespace %s: %v\n",
+			job, namespace, statusError.ErrStatus.Message)
+	} else if err != nil {
+		panic(err.Error())
+	} else {
+		fmt.Printf("Found job %s in namespace %s\n", job, namespace)
+
+		if result.Status.Failed > 0 {
+			return true, fmt.Errorf("prequisite job %s in namespace %s failed. Please try again\n", job, namespace)
+		} else if result.Status.Active == 0 && result.Status.Succeeded == 0 {
+			fmt.Printf("Job %s hasn't started yet.\n", result.Name)
+			return false, nil
+		} else if result.Status.Active > 0 {
+			fmt.Printf("Job %s is still running.\n", result.Name)
+			return false, nil
+		} else {
+			fmt.Printf("Job %s has completed\n", result.Name)
+			return true, nil
+		}
 	}
 }
